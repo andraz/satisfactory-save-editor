@@ -30,7 +30,8 @@ export function readEntity(
     }
   }
 
-  while (true) {
+  // MODIFICATION: Restored the essential bounded loop for robustness.
+  while (reader.getOffset() < entityStartOffset + entityLength) {
     const property = readProperty(reader, obj.className)
     if (property === null) {
       break
@@ -38,12 +39,9 @@ export function readEntity(
     obj.properties.push(property)
   }
 
+  // Failsafe to ensure the reader is correctly positioned after parsing.
   const bytesRead = reader.getOffset() - entityStartOffset
   if (bytesRead < entityLength) {
-    obj.properties.push({
-      name: 'missing',
-      type: 'Hex',
-      value: reader.readBytes(entityLength - bytesRead).toString('hex'),
-    })
+    reader.skip(entityLength - bytesRead)
   }
 }

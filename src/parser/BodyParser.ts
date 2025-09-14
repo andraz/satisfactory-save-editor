@@ -42,10 +42,11 @@ export function parseBody(
   }
 
   const objects: Record<string, SaveObject> = {}
-  const entitiesToObjects: string[] = []
   const numLevels = reader.readInt32()
 
   for (let i = 0; i <= numLevels; i++) {
+    const objectPathNames: string[] = []
+
     const levelName =
       i === numLevels ? `Level ${header.mapName}` : reader.readString()
 
@@ -76,12 +77,11 @@ export function parseBody(
           ? readObject(reader, header, levelSaveVersion)
           : readActor(reader, header, levelSaveVersion)
       objects[obj.pathName] = obj
-      entitiesToObjects.push(obj.pathName)
+      objectPathNames.push(obj.pathName)
     }
 
-    if (reader.getOffset() < objectBlockStartOffset + levelObjectDataLength) {
-      skipCollected(reader, header, levelName)
-    }
+    // FIX #1: Explicitly seek to the end of the object block to ensure synchronization.
+    reader.seek(objectBlockStartOffset + Number(levelObjectDataLength))
 
     const entityDataLength = Number(
       header.saveVersion >= 41 ? reader.readInt64() : reader.readInt32(),
@@ -89,27 +89,25 @@ export function parseBody(
     const entityBlockStartOffset = reader.getOffset()
     const numEntities = reader.readInt32()
 
-    for (let j = 0; j < numEntities; j++) {
-      const objectPathName = entitiesToObjects[j]
-      if (objects[objectPathName]) {
-        readEntity(reader, header, objects[objectPathName])
+    const actorsInLevel = objectPathNames
+      .map((path) => objects[path])
+      .filter((obj) => obj && obj.type === 1)
+
+    for (const actor of actorsInLevel) {
+      if (reader.getOffset() < entityBlockStartOffset + entityDataLength) {
+        readEntity(reader, header, actor)
       } else {
-        const entityVersion = reader.readInt32()
-        if (entityVersion !== header.saveVersion) {
-          reader.readInt32()
-        }
-        const entityLength = reader.readInt32()
-        reader.skip(entityLength)
+        break
       }
     }
 
-    const bytesReadInEntityBlock = reader.getOffset() - entityBlockStartOffset
-    if (bytesReadInEntityBlock < entityDataLength) {
-      reader.skip(entityDataLength - bytesReadInEntityBlock)
-    }
+    // FIX #2: Explicitly seek to the end of the entity block, just like the original project.
+    reader.seek(entityBlockStartOffset + Number(entityDataLength))
 
     if (header.saveVersion >= 51 && levelName !== `Level ${header.mapName}`) {
-      reader.readUint32()
+      if (reader.bytesLeft() >= 4) {
+        reader.readUint32()
+      }
     }
 
     skipCollected(reader, header, levelName)
