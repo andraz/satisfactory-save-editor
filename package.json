@@ -13,10 +13,16 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
+    "customEditors": [
       {
-        "command": "satisfactory-save-editor.helloWorld",
-        "title": "Hello World"
+        "viewType": "satisfactory.saveEditor",
+        "displayName": "Satisfactory Save Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.sav"
+          }
+        ],
+        "priority": "option"
       }
     ]
   },

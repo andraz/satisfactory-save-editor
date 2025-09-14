@@ -77,4 +77,10 @@ export class BinaryReader {
     this.offset = this.buffer.length
     return slice
   }
+
+  public readBigUint64(): bigint {
+    const val = this.dataView.getBigUint64(this.offset, true)
+    this.offset += 8
+    return val
+  }
 }

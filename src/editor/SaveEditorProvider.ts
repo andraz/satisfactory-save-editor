@@ -4,29 +4,23 @@ import { SaveWriter } from '../parser/SaveWriter'
 import { SaveData } from '../parser/types'
 
 /**
- * A custom document implementation for our save files.
- * It holds the parsed JSON data and the original header info.
+ * The Custom Document for our save files. It holds the parsed data.
  */
 class SaveDocument implements vscode.CustomDocument {
   constructor(
     public readonly uri: vscode.Uri,
     public saveData: SaveData,
   ) {}
-
-  dispose(): void {
-    // No resources to dispose
-  }
-
-  getText(): string {
-    return JSON.stringify(this.saveData.objects, null, 2)
-  }
+  dispose(): void {}
 }
 
 /**
  * The provider for the Satisfactory Save Editor.
- * This class handles opening, saving, and displaying .sav files.
+ * This class implements the CustomEditorProvider API, which is ideal for binary files.
  */
-export class SaveEditorProvider implements vscode.CustomTextEditorProvider {
+export class SaveEditorProvider
+  implements vscode.CustomEditorProvider<SaveDocument>
+{
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
     const provider = new SaveEditorProvider(context)
     return vscode.window.registerCustomEditorProvider(
@@ -40,100 +34,128 @@ export class SaveEditorProvider implements vscode.CustomTextEditorProvider {
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   /**
-   * Called by VS Code when a .sav file is opened.
-   * This is the "unpacking" stage.
+   * Called by VS Code when a .sav file is opened. This is the "unpacking" stage.
    */
-  public async openCustomDocument(
-    uri: vscode.Uri,
-  ): Promise<vscode.CustomDocument> {
+  public async openCustomDocument(uri: vscode.Uri): Promise<SaveDocument> {
     const fileData = await vscode.workspace.fs.readFile(uri)
     const parser = new SaveParser(Buffer.from(fileData))
-
-    try {
-      const saveData = parser.parse()
-      return new SaveDocument(uri, saveData)
-    } catch (error: any) {
-      console.error(error)
-      vscode.window.showErrorMessage(
-        `Failed to parse save file: ${error.message}`,
-      )
-      throw error
-    }
+    const saveData = parser.parse()
+    return new SaveDocument(uri, saveData)
   }
 
   /**
-   * Called by VS Code to display the content of the custom document.
-   * We provide the stringified JSON here.
+   * Called by VS Code to render the editor for our custom document.
    */
-  public async resolveCustomTextEditor(
-    document: vscode.TextDocument,
+  public async resolveCustomEditor(
+    document: SaveDocument,
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken,
   ): Promise<void> {
-    // The document is a virtual text document with the JSON content.
-    // We can set its initial content and language.
     webviewPanel.webview.options = { enableScripts: true }
+    webviewPanel.webview.html = this._getWebviewContent(document.saveData)
 
-    // For a text editor provider, we don't need to render HTML.
-    // We manage the document's content, and VS Code renders the editor.
+    // Handle messages from the webview (e.g., when content changes)
+    webviewPanel.webview.onDidReceiveMessage((message) => {
+      switch (message.command) {
+        case 'update':
+          try {
+            const updatedObjects = JSON.parse(message.text)
+            document.saveData.objects = updatedObjects
+            this._onDidChangeCustomDocument.fire({
+              document,
+              undo: () => {},
+              redo: () => {},
+            })
+          } catch (e) {
+            // Ignore JSON syntax errors during typing
+          }
+          return
+      }
+    })
   }
 
   /**
-   * Called by VS Code when the user saves the document.
-   * This is the "repackaging" stage.
+   * Generates the HTML for the editor, placing the JSON in a textarea.
    */
-  public async saveCustomDocument(
-    document: SaveDocument,
-    cancellation: vscode.CancellationToken,
-  ): Promise<void> {
-    const docText = document.getText()
-    let updatedObjects
-
-    try {
-      updatedObjects = JSON.parse(docText)
-    } catch (e: any) {
-      vscode.window.showErrorMessage('Failed to save: Invalid JSON format.')
-      return
-    }
-
-    const saveData: SaveData = {
-      header: document.saveData.header,
-      objects: updatedObjects,
-    }
-
-    try {
-      const writer = new SaveWriter(saveData)
-      const newFileContent = writer.write()
-
-      await vscode.workspace.fs.writeFile(document.uri, newFileContent)
-    } catch (error: any) {
-      console.error(error)
-      vscode.window.showErrorMessage(
-        `Failed to write save file: ${error.message}`,
-      )
-      throw error
-    }
+  private _getWebviewContent(saveData: SaveData): string {
+    const jsonString = JSON.stringify(saveData.objects, null, 2)
+    return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Satisfactory Save Editor</title>
+                <style>
+                    body, html, textarea {
+                        margin: 0;
+                        padding: 0;
+                        width: 100%;
+                        height: 100vh;
+                        border: none;
+                        font-family: var(--vscode-editor-font-family);
+                        font-size: var(--vscode-editor-font-size);
+                        background-color: var(--vscode-editor-background);
+                        color: var(--vscode-editor-foreground);
+                    }
+                </style>
+            </head>
+            <body>
+                <textarea id="editor">${jsonString}</textarea>
+                <script>
+                    const vscode = acquireVsCodeApi();
+                    const editor = document.getElementById('editor');
+                    editor.addEventListener('input', (e) => {
+                        vscode.postMessage({
+                            command: 'update',
+                            text: e.target.value
+                        });
+                    });
+                </script>
+            </body>
+            </html>`
   }
 
+  // These events are required for the "save" functionality to work.
   private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<
     vscode.CustomDocumentEditEvent<SaveDocument>
   >()
   public readonly onDidChangeCustomDocument =
     this._onDidChangeCustomDocument.event
 
-  public saveCustomDocumentAs(
+  public async saveCustomDocument(
+    document: SaveDocument,
+    cancellation: vscode.CancellationToken,
+  ): Promise<void> {
+    const writer = new SaveWriter(document.saveData)
+    const newFileContent = writer.write()
+    await vscode.workspace.fs.writeFile(document.uri, newFileContent)
+  }
+
+  public async saveCustomDocumentAs(
     document: SaveDocument,
     destination: vscode.Uri,
     cancellation: vscode.CancellationToken,
-  ): Thenable<void> {
-    throw new Error('Method not implemented.')
+  ): Promise<void> {
+    // Implement "Save As" logic here
+    const writer = new SaveWriter(document.saveData)
+    const newFileContent = writer.write()
+    await vscode.workspace.fs.writeFile(destination, newFileContent)
   }
 
-  public revertCustomDocument(
+  public async revertCustomDocument(
     document: SaveDocument,
     cancellation: vscode.CancellationToken,
-  ): Thenable<void> {
-    throw new Error('Method not implemented.')
+  ): Promise<void> {
+    const fileData = await vscode.workspace.fs.readFile(document.uri)
+    const parser = new SaveParser(Buffer.from(fileData))
+    document.saveData = parser.parse()
+    // Fire an event to tell VS Code the document has changed
+    this._onDidChangeCustomDocument.fire({
+      document,
+      undo: () => {},
+      redo: () => {},
+    })
   }
 
   public backupCustomDocument(
