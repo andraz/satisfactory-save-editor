@@ -11,7 +11,11 @@ export function readProperty(
     return null
   }
 
-  reader.readByte() // Skip extra byte
+  const extraByte = reader.readByte()
+  if (extraByte !== 0) {
+    reader.seek(reader.getOffset() - 1)
+  }
+
   const type = reader.readString().replace('Property', '')
   const length = reader.readInt32()
   const propertyStartOffset = reader.getOffset()
@@ -81,39 +85,36 @@ export function readProperty(
       }
       break
     case 'Text':
-      // Simplified text parsing, captures the most common format
-      reader.skip(5) // flags, historyType
+      reader.skip(5)
       property.value = reader.readString()
       break
     case 'Struct':
-      property.value = readStructProperty(reader, property.name)
+      property.value = readStructProperty(reader, length, propertyStartOffset)
       break
     case 'Array':
-      property.value = readArrayProperty(reader, property.name)
+      property.value = readArrayProperty(reader)
       break
     case 'Map':
       property.value = readMapProperty(reader)
       break
     default:
-      reader.seek(propertyStartOffset + length)
-      property.value = `SKIPPED (type: ${type}, length: ${length})`
       break
   }
 
-  const bytesRead = reader.getOffset() - propertyStartOffset
-  if (bytesRead < length) {
-    reader.skip(length - bytesRead)
-  }
-
+  reader.seek(propertyStartOffset + length)
   return property
 }
 
-const readStructProperty = (reader: BinaryReader, propertyName: string) => {
+const readStructProperty = (
+  reader: BinaryReader,
+  structLength: number,
+  structStartOffset: number,
+) => {
   const type = reader.readString()
-  reader.skip(17) // GUID + 1 byte
+  reader.skip(17)
 
   const values: any[] = []
-  while (true) {
+  while (reader.getOffset() < structStartOffset + structLength) {
     const prop = readProperty(reader, type)
     if (prop === null) {
       break
@@ -123,23 +124,24 @@ const readStructProperty = (reader: BinaryReader, propertyName: string) => {
   return { type, values }
 }
 
-const readArrayProperty = (reader: BinaryReader, propertyName: string) => {
+const readArrayProperty = (reader: BinaryReader) => {
   const type = reader.readString().replace('Property', '')
-  reader.skip(1) // Unknown byte
+  reader.skip(1)
   const count = reader.readInt32()
   const values: any[] = []
 
   if (type === 'Struct') {
-    reader.readString() // e.g. "mSortRules"
+    // MODIFICATION: The erroneous reader.readString() was here and has been removed.
     reader.readString() // "StructProperty"
-    reader.skip(4) // structureSize
+    const structureSize = reader.readInt32()
     reader.skip(4) // 0
     const structureSubType = reader.readString()
     reader.skip(17) // GUID + 1 byte
 
     for (let i = 0; i < count; i++) {
       const structProperties: any[] = []
-      while (true) {
+      const structStartOffset = reader.getOffset()
+      while (reader.getOffset() < structStartOffset + structureSize) {
         const prop = readProperty(reader, structureSubType)
         if (prop === null) {
           break
@@ -147,11 +149,11 @@ const readArrayProperty = (reader: BinaryReader, propertyName: string) => {
         structProperties.push(prop)
       }
       values.push(structProperties)
-    }
-  } else {
-    // For simple types, just read count times
-    for (let i = 0; i < count; i++) {
-      // Simplified for baseline
+
+      const bytesReadInStruct = reader.getOffset() - structStartOffset
+      if (bytesReadInStruct < structureSize) {
+        reader.skip(structureSize - bytesReadInStruct)
+      }
     }
   }
   return { type, values }
@@ -162,7 +164,7 @@ const readMapProperty = (reader: BinaryReader) => {
   const valueType = reader.readString().replace('Property', '')
   reader.skip(1)
   const count = reader.readInt32()
-  reader.skip(4) // Unknown
+  reader.skip(4)
   const values: { key: any; value: any }[] = []
 
   for (let i = 0; i < count; i++) {
