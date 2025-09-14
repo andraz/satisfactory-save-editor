@@ -30,20 +30,16 @@ export interface SaveObject {
   className: string
   pathName: string
   outerPathName?: string
-  children?: { pathName: string }[]
-  properties: SaveProperty[]
-  entity?: any // To be defined further
   transform?: Transform
-}
-
-export interface SaveActor extends SaveObject {
-  transform: Transform
-  wasPlacedInLevel: boolean
+  objectFlags?: number // For newer save versions
+  properties: SaveProperty[]
+  children?: { pathName: string }[]
+  entity?: { levelName: string; pathName: string }
 }
 
 export interface Transform {
   rotation: [number, number, number, number]
-  translation: [number, number, number, number]
+  translation: [number, number, number]
   scale3d: [number, number, number]
 }
 
@@ -52,5 +48,4 @@ export interface SaveProperty {
   type: string
   value: any
   index?: number
-  // ... other metadata for complex types like arrays/structs
 }

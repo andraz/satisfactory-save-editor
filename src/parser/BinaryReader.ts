@@ -16,6 +16,22 @@ export class BinaryReader {
     )
   }
 
+  public getOffset(): number {
+    return this.offset
+  }
+
+  /**
+   * Sets the reader's current offset to a specific position.
+   * @param offset The position to seek to.
+   */
+  public seek(offset: number): void {
+    this.offset = offset
+  }
+
+  public bytesLeft(): number {
+    return this.buffer.length - this.offset
+  }
+
   public isEOF(): boolean {
     return this.offset >= this.buffer.length
   }
@@ -24,8 +40,20 @@ export class BinaryReader {
     this.offset += bytes
   }
 
+  public readBytes(count: number): Buffer {
+    const slice = this.buffer.slice(this.offset, this.offset + count)
+    this.offset += count
+    return slice
+  }
+
   public readByte(): number {
     const val = this.dataView.getUint8(this.offset)
+    this.offset += 1
+    return val
+  }
+
+  public readInt8(): number {
+    const val = this.dataView.getInt8(this.offset)
     this.offset += 1
     return val
   }
@@ -36,14 +64,32 @@ export class BinaryReader {
     return val
   }
 
+  public readUint32(): number {
+    const val = this.dataView.getUint32(this.offset, true)
+    this.offset += 4
+    return val
+  }
+
   public readFloat32(): number {
     const val = this.dataView.getFloat32(this.offset, true)
     this.offset += 4
     return val
   }
 
+  public readFloat64(): number {
+    const val = this.dataView.getFloat64(this.offset, true)
+    this.offset += 8
+    return val
+  }
+
   public readInt64(): bigint {
     const val = this.dataView.getBigInt64(this.offset, true)
+    this.offset += 8
+    return val
+  }
+
+  public readBigUint64(): bigint {
+    const val = this.dataView.getBigUint64(this.offset, true)
     this.offset += 8
     return val
   }
@@ -56,19 +102,16 @@ export class BinaryReader {
       // UTF-16
       const numChars = -length
       const byteLength = numChars * 2
-      const end = this.offset + byteLength
-      const slice = this.buffer.slice(this.offset, end)
-      this.offset = end
-      this.skip(2) // Null terminator
+      const slice = this.buffer.slice(this.offset, this.offset + byteLength)
+      this.offset += byteLength
+      this.skip(2) // Null terminator for UTF-16
       return this.utf16Decoder.decode(slice)
     } else {
       // UTF-8
       const byteLength = length
-      const end = this.offset + byteLength
-      const slice = this.buffer.slice(this.offset, end)
-      this.offset = end
-      // The null terminator is included in the length for UTF-8
-      return this.utf8Decoder.decode(slice.slice(0, -1))
+      const slice = this.buffer.slice(this.offset, this.offset + length)
+      this.offset += length
+      return this.utf8Decoder.decode(slice.slice(0, -1)) // Null terminator is part of length
     }
   }
 
@@ -76,11 +119,5 @@ export class BinaryReader {
     const slice = this.buffer.slice(this.offset)
     this.offset = this.buffer.length
     return slice
-  }
-
-  public readBigUint64(): bigint {
-    const val = this.dataView.getBigUint64(this.offset, true)
-    this.offset += 8
-    return val
   }
 }
