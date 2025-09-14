@@ -31,7 +31,7 @@
   "devDependencies": {
     "@types/mocha": "10.0.10",
     "@types/node": "24.4.0",
-    "@types/vscode": "1.104.0",
+    "@types/vscode": "^1.104.0",
     "@typescript-eslint/eslint-plugin": "8.43.0",
     "@typescript-eslint/parser": "8.43.0",
     "@vscode/test-cli": "0.0.11",
@@ -40,6 +40,8 @@
     "typescript": "5.9.2"
   },
   "dependencies": {
+    "@types/pako": "^2.0.4",
+    "pako": "^2.1.0",
     "prettier": "3.6.2"
   }
 }
