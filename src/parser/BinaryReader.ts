@@ -20,10 +20,6 @@ export class BinaryReader {
     return this.offset
   }
 
-  /**
-   * Sets the reader's current offset to a specific position.
-   * @param offset The position to seek to.
-   */
   public seek(offset: number): void {
     this.offset = offset
   }
@@ -96,22 +92,28 @@ export class BinaryReader {
 
   public readString(): string {
     const length = this.readInt32()
-    if (length === 0) return ''
+    if (length === 0) {
+      return ''
+    }
+
+    if (length > this.bytesLeft() || length < -this.bytesLeft()) {
+      throw new Error(
+        `Invalid string length: ${length} at offset ${this.offset - 4}`,
+      )
+    }
 
     if (length < 0) {
-      // UTF-16
       const numChars = -length
       const byteLength = numChars * 2
       const slice = this.buffer.slice(this.offset, this.offset + byteLength)
       this.offset += byteLength
-      this.skip(2) // Null terminator for UTF-16
+      this.skip(2) // UTF-16 Null terminator
       return this.utf16Decoder.decode(slice)
     } else {
-      // UTF-8
       const byteLength = length
-      const slice = this.buffer.slice(this.offset, this.offset + length)
+      const slice = this.buffer.slice(this.offset, this.offset + byteLength)
       this.offset += length
-      return this.utf8Decoder.decode(slice.slice(0, -1)) // Null terminator is part of length
+      return this.utf8Decoder.decode(slice.slice(0, -1)) // UTF-8 Null terminator is part of length
     }
   }
 

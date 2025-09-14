@@ -31,9 +31,9 @@ export interface SaveObject {
   pathName: string
   outerPathName?: string
   transform?: Transform
-  objectFlags?: number // For newer save versions
+  objectFlags?: number
   properties: SaveProperty[]
-  children?: { pathName: string }[]
+  children?: { levelName: string; pathName: string }[]
   entity?: { levelName: string; pathName: string }
 }
 
