@@ -2,6 +2,7 @@ import * as pako from 'pako'
 import { SaveHeader, SaveObject } from './types'
 import { BinaryReader } from './BinaryReader'
 import { readObject, readActor, readObjectProperty } from './ObjectParser'
+import { readEntity } from './EntityParser'
 
 export function decompressBody(
   reader: BinaryReader,
@@ -34,6 +35,7 @@ export function decompressBody(
 export function parseBodyOutline(
   reader: BinaryReader,
   header: SaveHeader,
+  deepParse = false,
 ): Record<string, SaveObject> {
   reader.skip(header.saveVersion >= 41 ? 8 : 4)
 
@@ -67,6 +69,7 @@ export function parseBodyOutline(
     }
 
     const objectBlockStartOffset = reader.getOffset()
+    const objectList: SaveObject[] = []
 
     const numObjects = reader.readInt32()
     for (let j = 0; j < numObjects; j++) {
@@ -76,6 +79,7 @@ export function parseBodyOutline(
           ? readObject(reader, header, levelSaveVersion)
           : readActor(reader, header, levelSaveVersion)
       objects[obj.pathName] = obj
+      objectList.push(obj)
     }
 
     reader.seek(objectBlockStartOffset + Number(levelObjectDataLength))
@@ -83,7 +87,23 @@ export function parseBodyOutline(
     const entityDataLength = Number(
       header.saveVersion >= 41 ? reader.readInt64() : reader.readInt32(),
     )
-    reader.skip(Number(entityDataLength))
+    const entityDataEndOffset = reader.getOffset() + Number(entityDataLength)
+
+    if (deepParse) {
+      for (const obj of objectList) {
+        if (obj.type === 1) {
+          if (reader.getOffset() < entityDataEndOffset) {
+            readEntity(reader, header, obj)
+          } else {
+            // Stop if we unexpectedly reach the end of the entity data block.
+            break
+          }
+        }
+      }
+    }
+
+    // Always seek to the end of the block to ensure we start the next section correctly.
+    reader.seek(entityDataEndOffset)
 
     if (header.saveVersion >= 51 && levelName !== `Level ${header.mapName}`) {
       if (reader.bytesLeft() >= 4) {
