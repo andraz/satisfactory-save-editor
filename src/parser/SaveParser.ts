@@ -1,7 +1,7 @@
 import { SaveHeader, SaveData } from './types'
 import { BinaryReader } from './BinaryReader'
 import { parseHeader } from './HeaderParser'
-import { decompressBody, parseBody } from './BodyParser'
+import { decompressBody, parseBodyOutline } from './BodyParser'
 
 export class SaveParser {
   private reader: BinaryReader
@@ -15,7 +15,9 @@ export class SaveParser {
     this.header = parseHeader(this.reader)
     const bodyBuffer = decompressBody(this.reader, this.header)
     this.reader = new BinaryReader(bodyBuffer)
-    const objects = parseBody(this.reader, this.header)
+
+    const objects = parseBodyOutline(this.reader, this.header)
+
     return { header: this.header, objects }
   }
 }

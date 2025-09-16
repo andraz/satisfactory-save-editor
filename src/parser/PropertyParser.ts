@@ -131,8 +131,6 @@ const readArrayProperty = (reader: BinaryReader) => {
   const values: any[] = []
 
   if (type === 'Struct') {
-    // MODIFICATION: The erroneous reader.readString() was here and has been removed.
-    reader.readString() // "StructProperty"
     const structureSize = reader.readInt32()
     reader.skip(4) // 0
     const structureSubType = reader.readString()
