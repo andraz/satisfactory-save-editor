@@ -2,7 +2,6 @@ import * as pako from 'pako'
 import { SaveHeader, SaveObject } from './types'
 import { BinaryReader } from './BinaryReader'
 import { readObject, readActor, readObjectProperty } from './ObjectParser'
-import { readEntity } from './EntityParser'
 
 export function decompressBody(
   reader: BinaryReader,
@@ -32,11 +31,12 @@ export function decompressBody(
   return Buffer.concat(decompressedChunks)
 }
 
-export function parseBody(
+export function parseBodyOutline(
   reader: BinaryReader,
   header: SaveHeader,
 ): Record<string, SaveObject> {
   reader.skip(header.saveVersion >= 41 ? 8 : 4)
+
   if (header.saveVersion >= 41) {
     skipPartitions(reader)
   }
@@ -45,17 +45,14 @@ export function parseBody(
   const numLevels = reader.readInt32()
 
   for (let i = 0; i <= numLevels; i++) {
-    const objectPathNames: string[] = []
-
     const levelName =
       i === numLevels ? `Level ${header.mapName}` : reader.readString()
 
     const levelObjectDataLength = Number(
       header.saveVersion >= 41 ? reader.readInt64() : reader.readInt32(),
     )
-    const objectBlockStartOffset = reader.getOffset()
-    let levelSaveVersion: number | null = null
 
+    let levelSaveVersion: number | null = null
     if (header.saveVersion >= 51) {
       if (levelName !== `Level ${header.mapName}`) {
         const tempOffset = reader.getOffset()
@@ -69,40 +66,24 @@ export function parseBody(
       }
     }
 
+    const objectBlockStartOffset = reader.getOffset()
+
     const numObjects = reader.readInt32()
     for (let j = 0; j < numObjects; j++) {
       const type = reader.readInt32()
-      let obj: SaveObject =
+      const obj: SaveObject =
         type === 0
           ? readObject(reader, header, levelSaveVersion)
           : readActor(reader, header, levelSaveVersion)
       objects[obj.pathName] = obj
-      objectPathNames.push(obj.pathName)
     }
 
-    // FIX #1: Explicitly seek to the end of the object block to ensure synchronization.
     reader.seek(objectBlockStartOffset + Number(levelObjectDataLength))
 
     const entityDataLength = Number(
       header.saveVersion >= 41 ? reader.readInt64() : reader.readInt32(),
     )
-    const entityBlockStartOffset = reader.getOffset()
-    const numEntities = reader.readInt32()
-
-    const actorsInLevel = objectPathNames
-      .map((path) => objects[path])
-      .filter((obj) => obj && obj.type === 1)
-
-    for (const actor of actorsInLevel) {
-      if (reader.getOffset() < entityBlockStartOffset + entityDataLength) {
-        readEntity(reader, header, actor)
-      } else {
-        break
-      }
-    }
-
-    // FIX #2: Explicitly seek to the end of the entity block, just like the original project.
-    reader.seek(entityBlockStartOffset + Number(entityDataLength))
+    reader.skip(Number(entityDataLength))
 
     if (header.saveVersion >= 51 && levelName !== `Level ${header.mapName}`) {
       if (reader.bytesLeft() >= 4) {
@@ -112,7 +93,6 @@ export function parseBody(
 
     skipCollected(reader, header, levelName)
   }
-
   return objects
 }
 
